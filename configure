@@ -1,0 +1,115 @@
+#!/bin/bash
+
+die() {
+    echo
+    echo "$@" >&2
+    exit 1
+}
+
+err() {
+    echo "$@" >&2
+}
+
+echo ===============================
+echo Notime installer v1.0 for MinGW
+echo ===============================
+echo
+
+help_download_mingw() {
+    echo "You can find the latest version of MinGW at the following URL:"
+    echo
+    echo "http://sourceforge.net/projects/mingw/files/"
+}
+
+if ! gcc --version >/dev/null; then
+    err
+    err "gcc couldn't be executed. This is very strange. If you've messed with"
+    err "MinGW's PATH environment variable, then you may need to ensure gcc"
+    err "is still runnable."
+    err
+    err "If you don't know why this isn't working, it may be easier just to"
+    err "reinstall MinGW."
+    err
+    help_download_mingw >&2
+    exit 1
+fi
+
+if ! gcc --version | head -n 1 | grep -q '4\.7'; then
+    err "It looks like you're using an unexpected version of gcc:"
+    err
+    gcc --version | head -n 1
+    err
+    err "This installer requires gcc 4.7.*. You may need to update or reinstall"
+    err "MinGW to get the proper version of gcc."
+    err
+    help_download_mingw >&2
+    exit 1
+fi
+
+if ! git --version >/dev/null; then
+    err "Git couldn't be found or executed. You probably need to install it or"
+    err "reopen MinGW terminal to ensure your PATH gets updated properly."
+    err
+    err "If you need to install git, go the following URL to download the installer:"
+    err
+    err "http://msysgit.googlecode.com/files/Git-1.8.0-preview20121022.exe"
+    err
+    err "Be sure to choose the following options when installing it:"
+    err '    * Use "Run Git from the Windows Command Prompt"'
+    err '    * Use "Checkout Windows-style, commit Unix-style endings"'
+    err
+    exit 1
+fi
+
+if ! wget --version >/dev/null; then
+    err "wget doesn't appear to be installed, so I'm attempting to install it."
+    err
+    if ! mingw-get install msys-wget; then
+        err
+        err "wget failed to install. I'm not sure why this would fail, but to install"
+        err "wget yourself, run the following command:"
+        err
+        err "mingw-get install msys-wget"
+        exit 1
+    fi
+    err
+fi
+
+echo "When typing paths, be sure to escape any backslashes; use "
+echo "C:\\\\ instead of C:\\. You can also use UNIX-style paths"
+echo "like /c/Windows/"
+echo
+
+check_for_qt() {
+    if [ "$QTDIR" = 'help' ]; then
+        err "You can download Qt 5.0.2 from the following URL: "
+        err
+        err "http://qt-project.org/downloads"
+        err
+        err "Choose the latest version of Qt 5.0 for MinGW."
+        exit 1;
+    fi
+    if [ "$QTDIR" = 'exit' ] || [ "$QTDIR" = 'quit' ]; then
+        exit 1;
+    fi
+    if [ "$QTDIR" = "" ]; then
+        return 1;
+    fi
+    if [ ! -d $QTDIR ]; then
+        err "$QTDIR doesn't look like a valid directory."
+        err
+        return 1;
+    fi
+    return 0;
+}
+
+while ! check_for_qt; do 
+    echo "Where did you install Qt? (type 'help' if you didn't install Qt)"
+    echo -n "> "
+    read QTDIR
+    echo
+done;
+
+echo "Everything looks good! Run 'make' to build and install everything."
+
+# vim: set ts=4 sw=4 et :
