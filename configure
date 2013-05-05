@@ -1,13 +1,52 @@
 #!/bin/bash
 
-die() {
-    echo
+err() {
     echo "$@" >&2
+}
+
+die() {
+    err
+    err "$@*"
     exit 1
 }
 
-err() {
-    echo "$@" >&2
+install_msys_package() {
+    local package=$1
+    err "$package doesn't appear to be installed, so I'm attempting to install it."
+    err
+    if ! mingw-get install msys-$package; then
+        err
+        err "$package failed to install. I'm not sure why this would fail, but to install"
+        err "$package yourself, run the following command:"
+        err
+        err "mingw-get install msys-$package"
+        exit 1
+    fi
+    err
+}
+
+make_and_cd() {
+    local path="$*"
+    mkdir -p $path || die "Failed to create $path"
+    cd $path || die "Failed to cd to $path"
+}
+
+download() {
+    local url=$1
+    local target=$2
+    if ! wget --version >/dev/null; then
+        install_msys_package wget
+    fi
+
+    if [ -n "$target" ] && [ -e $target ]; then
+        # Target already exists, so just return
+        return;
+    fi;
+
+    echo
+    echo "$target couldn't be found, so downloading it:"
+    echo
+    wget --no-check-certificate -O $target "$url" || die "Failed to download $url"
 }
 
 echo ===============================
@@ -61,24 +100,12 @@ if ! git --version >/dev/null; then
     exit 1
 fi
 
-if ! wget --version >/dev/null; then
-    err "wget doesn't appear to be installed, so I'm attempting to install it."
-    err
-    if ! mingw-get install msys-wget; then
-        err
-        err "wget failed to install. I'm not sure why this would fail, but to install"
-        err "wget yourself, run the following command:"
-        err
-        err "mingw-get install msys-wget"
-        exit 1
-    fi
-    err
+if ! unzip -hh >/dev/null; then
+    install_msys_package unzip
 fi
 
-echo "When typing paths, be sure to escape any backslashes; use "
-echo "C:\\\\ instead of C:\\. You can also use UNIX-style paths"
-echo "like /c/Windows/"
-echo
+echo "When typing paths, be sure to use UNIX-style paths, like /c/Windows"
+echo "instead of C:\windows."
 
 check_for_qt() {
     if [ "$QTDIR" = 'help' ]; then
@@ -86,7 +113,8 @@ check_for_qt() {
         err
         err "http://qt-project.org/downloads"
         err
-        err "Choose the latest version of Qt 5.0 for MinGW."
+        err "Choose the latest version of Qt 5.0 for MinGW. Install it in a directory"
+        err "that doesn't have spaces."
         exit 1;
     fi
     if [ "$QTDIR" = 'exit' ] || [ "$QTDIR" = 'quit' ]; then
@@ -100,16 +128,157 @@ check_for_qt() {
         err
         return 1;
     fi
+    if [ ! -d $QTDIR/bin ] || [ ! -x $QTDIR/bin/moc ]; then
+        possible_inner=`echo $QTDIR/5.* | awk -F' ' '{print $NF}'`/mingw47_32
+        if [ -d $possible_inner ]; then
+            # Use the inner directory that contains files that we can use to build Qt projects
+            if [ -d $possible_inner/bin ] && [ -x $possible_inner/bin/moc ]; then
+                QTDIR=$possible_inner
+                return 0;
+            fi
+        fi
+        err "$QTDIR is a valid directory, but it doesn't seem to contain Qt 5.0."
+        err
+        err "Here's a snipped listing of that directory: "
+        err
+        ls $QTDIR
+        err
+        return 1;
+    fi
+
     return 0;
 }
 
-while ! check_for_qt; do 
-    echo "Where did you install Qt? (type 'help' if you didn't install Qt)"
-    echo -n "> "
-    read QTDIR
-    echo
-done;
+# TODO commented out for now
+if false; then
+    while ! check_for_qt; do 
+        echo
+        echo "Where did you install Qt? (type 'help' if you didn't install Qt)"
+        echo -n "> "
+        read QTDIR
+    done;
+fi;
 
-echo "Everything looks good! Run 'make' to build and install everything."
+goto_tmp() {
+    make_and_cd $HOME/tmp/notime
+}
+
+install_freeglut() {
+    local package="freeglut"
+
+    goto_tmp
+
+    download http://files.transmissionzero.co.uk/software/development/GLUT/freeglut-MinGW.zip $package.zip
+
+    rm -rf $package
+    unzip -d $package $package.zip >/dev/null || die "Failed to unzip $package"
+    pushd $package/freeglut >/dev/null || die "Failed to cd to $package/freeglut. Currently in `pwd`"
+    if [ ! -d include ]; then
+        err
+        err "I'm in `pwd` but there doesn't seem to be any directories that I"
+        err "can install."
+    fi
+    cp -r bin include lib / || die "Failed to install $package files."
+    popd >/dev/null
+}
+
+install_freetype() {
+    local package="freetype"
+
+    goto_tmp
+
+    download http://sourceforge.net/projects/gnuwin32/files/freetype/2.3.5-1/freetype-2.3.5-1-bin.zip/download $package.zip
+
+    rm -rf $package
+    unzip -d $package $package.zip >/dev/null || die "Failed to unzip $package"
+    pushd $package >/dev/null || die "Failed to cd to $package. Currently in `pwd`"
+    if [ ! -d include ]; then
+        err
+        err "I'm in `pwd` but there doesn't seem to be any directories that I"
+        err "can install."
+        exit 1
+    fi
+    cp -r bin include lib man share / || die "Failed to install $package files."
+    popd >/dev/null
+}
+
+install_zlib() {
+    local package="zlib"
+
+    goto_tmp
+
+    download http://gnuwin32.sourceforge.net/downlinks/zlib-lib-zip.php zlib.zip
+
+    rm -rf $package
+    unzip -d $package $package.zip >/dev/null || die "Failed to unzip $package"
+    pushd $package >/dev/null || die "Failed to cd to $package. Currently in `pwd`"
+    if [ ! -d include ]; then
+        err
+        err "I'm in `pwd` but there doesn't seem to be any directories that I"
+        err "can install."
+        exit 1
+    fi
+    cp -r include lib / || die "Failed to install $package files."
+    popd >/dev/null
+}
+
+install_pkgconfig() {
+    local package="pkgconfig"
+
+    goto_tmp
+
+    download http://sourceforge.net/projects/pkgconfiglite/files/latest/download pkgconfig.zip
+
+    rm -rf $package
+    unzip -d $package $package.zip >/dev/null || die "Failed to unzip $package"
+    if ! pushd $package/pkg-config* >/dev/null; then
+        err "I couldn't cd to the unzipped pkg-config directory, which I tried to"
+        err "find using $package/pkg-config*. It's possible there's more than one directory"
+        err "or the package format has changed."
+        err
+        exit 1
+    fi
+    if [ ! -d bin ]; then
+        err
+        err "I'm in `pwd` but there doesn't seem to be any directories that I"
+        err "can install."
+        exit 1
+    fi
+    cp -r bin share / || die "Failed to install $package files."
+    popd >/dev/null
+}
+
+install_ftgl() {
+    local package="ftgl"
+
+    goto_tmp
+
+    download https://github.com/dafrito/notime-installer/blob/master/packages/ftgl.tar.gz?raw=true $package.tar.gz
+
+    rm -rf $package
+
+    make_and_cd $package
+    tar -xvzf ../$package.tar.gz >/dev/null || die "Failed to unzip $package"
+
+    pushd $package >/dev/null || die "Failed to cd to $package. Currently in `pwd`"
+    ./autogen.sh || die "$package failed to install"
+    ./configure --prefix=/mingw || die "$package failed to install"
+    make -j
+    make install
+
+    popd >/dev/null
+}
+
+# TODO Temporary rm for useful testing
+rm -rf $HOME/tmp/notime
+
+install_pkgconfig
+install_freeglut
+install_zlib
+install_freetype
+install_ftgl
+
+echo
+echo "Everything looks good!"
 
 # vim: set ts=4 sw=4 et :
